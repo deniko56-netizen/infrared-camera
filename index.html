@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Infrared & Thermal Camera Simulator</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        body {
+            background-color: #0d0f12;
+            color: #00ffcc;
+            font-family: 'Courier New', Courier, monospace;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            width: 100vw;
+        }
+        #viewport-container {
+            position: relative;
+            flex: 1;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+            overflow: hidden;
+        }
+        video {
+            display: none;
+        }
+        canvas#glcanvas {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        /* HUD Overlay */
+        .hud-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 16px;
+        }
+        .hud-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            text-shadow: 0 0 6px rgba(0, 255, 204, 0.7);
+            font-size: 12px;
+            letter-spacing: 1px;
+        }
+        .hud-badge {
+            background: rgba(0, 0, 0, 0.65);
+            border: 1px solid #00ffcc;
+            padding: 4px 8px;
+            border-radius: 4px;
+            display: inline-block;
+        }
+        .hud-crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80px;
+            height: 80px;
+            pointer-events: none;
+            opacity: 0.8;
+        }
+        .hud-crosshair::before, .hud-crosshair::after {
+            content: '';
+            position: absolute;
+            background: #00ffcc;
+        }
+        .hud-crosshair::before {
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 1px;
+            transform: translateY(-50%);
+        }
+        .hud-crosshair::after {
+            left: 50%;
+            top: 0;
+            bottom: 0;
+            width: 1px;
+            transform: translateX(-50%);
+        }
+        .hotspot-marker {
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            border: 2px solid #ff3366;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            display: none;
+            pointer-events: none;
+            box-shadow: 0 0 10px #ff3366;
+            animation: pulse 1s infinite alternate;
+        }
+        .hotspot-tag {
+            position: absolute;
+            top: -20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 51, 102, 0.85);
+            color: #fff;
+            font-size: 10px;
+            font-weight: bold;
+            padding: 1px 4px;
+            border-radius: 3px;
+            white-space: nowrap;
+        }
+        @keyframes pulse {
+            0% { transform: translate(-50%, -50%) scale(0.9); }
+            100% { transform: translate(-50%, -50%) scale(1.15); }
+        }
+        /* Thermal Scale Gradient Bar */
+        .thermal-scale {
+            position: absolute;
+            right: 14px;
+            top: 70px;
+            bottom: 120px;
+            width: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            border-radius: 3px;
+            background: linear-gradient(to bottom, #ffffff, #ffea00, #ff3300, #990099, #000033);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: flex-end;
+            font-size: 9px;
+            color: #fff;
+            padding: 2px;
+            text-shadow: 1px 1px 2px #000;
+        }
+        .scale-label {
+            margin-right: 18px;
+            background: rgba(0,0,0,0.6);
+            padding: 1px 3px;
+            border-radius: 2px;
+        }
+
+        /* Controls Bottom Bar */
+        .controls-container {
+            background: rgba(13, 15, 18, 0.95);
+            border-top: 1px solid #1f2937;
+            padding: 12px 16px 20px 16px;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .palettes-row {
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            padding-bottom: 4px;
+            scrollbar-width: none;
+        }
+        .palettes-row::-webkit-scrollbar {
+            display: none;
+        }
+        .palette-btn {
+            background: #1f242d;
+            border: 1px solid #374151;
+            color: #9ca3af;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: bold;
+            white-space: nowrap;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+        }
+        .palette-btn.active {
+            border-color: #00ffcc;
+            color: #00ffcc;
+            background: rgba(0, 255, 204, 0.12);
+            box-shadow: 0 0 10px rgba(0, 255, 204, 0.3);
+        }
+        .slider-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            font-size: 11px;
+        }
+        .slider-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .slider-group label {
+            display: flex;
+            justify-content: space-between;
+            color: #9ca3af;
+        }
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 4px;
+            background: #2a313d;
+            border-radius: 2px;
+            outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #00ffcc;
+            cursor: pointer;
+            box-shadow: 0 0 6px #00ffcc;
+        }
+        .actions-row {
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            margin-top: 4px;
+        }
+        .btn-circle {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border: 1px solid #374151;
+            background: #1e2430;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .btn-circle:active {
+            transform: scale(0.92);
+        }
+        .btn-shutter {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            border: 3px solid #00ffcc;
+            background: rgba(0, 255, 204, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 0 16px rgba(0, 255, 204, 0.4);
+            transition: 0.15s;
+        }
+        .btn-shutter-inner {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: #00ffcc;
+        }
+        .btn-shutter:active .btn-shutter-inner {
+            transform: scale(0.85);
+            background: #fff;
+        }
+        .status-msg {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.85);
+            padding: 16px 24px;
+            border: 1px solid #ff3366;
+            border-radius: 8px;
+            text-align: center;
+            color: #fff;
+            max-width: 80%;
+            z-index: 100;
+            display: none;
+        }
+        .status-msg button {
+            margin-top: 12px;
+            background: #00ffcc;
+            color: #000;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="viewport-container">
+        <video id="video" playsinline autoplay muted></video>
+        <canvas id="glcanvas"></canvas>
+
+        <div class="hud-overlay">
+            <div class="hud-header">
+                <div>
+                    <div class="hud-badge">IR-SPECTRAL HUD v2.5</div>
+                    <div style="margin-top: 4px; color: #aaa; font-size: 10px;" id="mode-text">PALETTE: IRONBOW</div>
+                </div>
+                <div style="text-align: right;">
+                    <div class="hud-badge" id="temp-center">T_CTR: 36.4°C</div>
+                    <div style="margin-top: 4px; color: #ff3366; font-size: 10px;" id="hotspot-text">MAX: 38.1°C</div>
+                </div>
+            </div>
+
+            <div class="hud-crosshair"></div>
+            <div class="hotspot-marker" id="hotspot-marker">
+                <span class="hotspot-tag" id="hotspot-val">HOT</span>
+            </div>
+
+            <div class="thermal-scale" id="thermal-scale">
+                <span class="scale-label">42°C</span>
+                <span class="scale-label">36°C</span>
+                <span class="scale-label">30°C</span>
+                <span class="scale-label">24°C</span>
+            </div>
+        </div>
+
+        <div class="status-msg" id="camera-modal">
+            <p id="modal-msg">Memerlukan akses kamera untuk memproses feed video.</p>
+            <button id="grant-btn" onclick="startCamera()">Aktifkan Kamera</button>
+        </div>
+    </div>
+
+    <div class="controls-container">
+        <!-- Palette Switcher -->
+        <div class="palettes-row" id="palette-list">
+            <button class="palette-btn active" data-mode="0">Ironbow</button>
+            <button class="palette-btn" data-mode="1">Rainbow</button>
+            <button class="palette-btn" data-mode="2">Inferno</button>
+            <button class="palette-btn" data-mode="3">Night Vision</button>
+            <button class="palette-btn" data-mode="4">Classic IR (B&W)</button>
+            <button class="palette-btn" data-mode="5">Edge Thermal (MSX)</button>
+        </div>
+
+        <!-- Adjustments -->
+        <div class="slider-row">
+            <div class="slider-group">
+                <label>Sensitivity / Gain <span id="gain-val">1.2x</span></label>
+                <input type="range" id="slider-gain" min="0.5" max="3.0" step="0.1" value="1.2">
+            </div>
+            <div class="slider-group">
+                <label>Contrast / Threshold <span id="contrast-val">1.3</span></label>
+                <input type="range" id="slider-contrast" min="0.5" max="2.5" step="0.1" value="1.3">
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="actions-row">
+            <button class="btn-circle" id="btn-switch-cam" title="Ganti Kamera">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M20 16v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4"></path>
+                    <path d="M4 8V4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v4"></path>
+                    <polyline points="16 20 20 16 24 20"></polyline>
+                    <polyline points="8 4 4 8 0 4"></polyline>
+                </svg>
+            </button>
+
+            <button class="btn-shutter" id="btn-capture" title="Ambil Foto">
+                <div class="btn-shutter-inner"></div>
+            </button>
+
+            <button class="btn-circle" id="btn-flash" title="Lampu Flash">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- WebGL Shaders -->
+    <script id="vs" type="x-shader/x-vertex">
+        attribute vec2 a_position;
+        attribute vec2 a_texCoord;
+        varying vec2 v_texCoord;
+        void main() {
+            gl_Position = vec4(a_position, 0.0, 1.0);
+            v_texCoord = a_texCoord;
+        }
+    </script>
+
+    <script id="fs" type="x-shader/x-fragment">
+        precision mediump float;
+        uniform sampler2D u_image;
+        uniform vec2 u_resolution;
+        uniform int u_mode;
+        uniform float u_gain;
+        uniform float u_contrast;
+        uniform float u_time;
+        varying vec2 v_texCoord;
+
+        // Color mapping for Ironbow (FLIR Thermal Standard)
+        vec3 paletteIronbow(float t) {
+            t = clamp(t, 0.0, 1.0);
+            vec3 c0 = vec3(0.05, 0.0, 0.15); // Dark Purple/Black
+            vec3 c1 = vec3(0.45, 0.0, 0.65); // Purple
+            vec3 c2 = vec3(0.85, 0.15, 0.1); // Red/Orange
+            vec3 c3 = vec3(1.0, 0.75, 0.0);  // Yellow
+            vec3 c4 = vec3(1.0, 1.0, 1.0);   // White Hot
+            
+            if (t < 0.25) return mix(c0, c1, t / 0.25);
+            if (t < 0.50) return mix(c1, c2, (t - 0.25) / 0.25);
+            if (t < 0.75) return mix(c2, c3, (t - 0.50) / 0.25);
+            return mix(c3, c4, (t - 0.75) / 0.25);
+        }
+
+        // Color mapping for Rainbow / Jet
+        vec3 paletteRainbow(float t) {
+            t = clamp(t, 0.0, 1.0);
+            float r = clamp(1.5 - abs(t * 4.0 - 3.0), 0.0, 1.0);
+            float g = clamp(1.5 - abs(t * 4.0 - 2.0), 0.0, 1.0);
+            float b = clamp(1.5 - abs(t * 4.0 - 1.0), 0.0, 1.0);
+            return vec3(r, g, b);
+        }
+
+        // Color mapping for Inferno
+        vec3 paletteInferno(float t) {
+            t = clamp(t, 0.0, 1.0);
+            vec3 c0 = vec3(0.0, 0.0, 0.04);
+            vec3 c1 = vec3(0.3, 0.05, 0.4);
+            vec3 c2 = vec3(0.7, 0.15, 0.2);
+            vec3 c3 = vec3(0.95, 0.6, 0.05);
+            vec3 c4 = vec3(0.98, 0.98, 0.7);
+
+            if (t < 0.25) return mix(c0, c1, t / 0.25);
+            if (t < 0.50) return mix(c1, c2, (t - 0.25) / 0.25);
+            if (t < 0.75) return mix(c2, c3, (t - 0.50) / 0.25);
+            return mix(c3, c4, (t - 0.75) / 0.25);
+        }
+
+        // Night Vision Green Phosphor
+        vec3 paletteNightVision(float lum, vec2 uv) {
+            // Simulated noise & scanlines
+            float noise = fract(sin(dot(uv + sin(u_time * 0.1), vec2(12.9898, 78.233))) * 43758.5453) * 0.15;
+            float scanline = sin(uv.y * 400.0) * 0.04;
+            float val = clamp(lum + noise + scanline, 0.0, 1.0);
+            return vec3(val * 0.2, val * 1.0, val * 0.3);
+        }
+
+        // Pseudo-Infrared B&W (Wood effect simulation: leaves bright, sky dark)
+        vec3 paletteClassicIR(vec3 color, float lum) {
+            // Boost red/green channels as IR reflectance
+            float ir = color.r * 0.6 + color.g * 0.5 - color.b * 0.2;
+            ir = clamp(ir * u_gain, 0.0, 1.0);
+            return vec3(ir);
+        }
+
+        // Sobel Edge Detection for MSX Thermal Fusion
+        float getSobelEdge(vec2 uv) {
+            vec2 step = 1.0 / u_resolution;
+            float tleft = dot(texture2D(u_image, uv + vec2(-step.x, step.y)).rgb, vec3(0.299, 0.587, 0.114));
+            float left = dot(texture2D(u_image, uv + vec2(-step.x, 0.0)).rgb, vec3(0.299, 0.587, 0.114));
+            float bleft = dot(texture2D(u_image, uv + vec2(-step.x, -step.y)).rgb, vec3(0.299, 0.587, 0.114));
+            float top = dot(texture2D(u_image, uv + vec2(0.0, step.y)).rgb, vec3(0.299, 0.587, 0.114));
+            float bottom = dot(texture2D(u_image, uv + vec2(0.0, -step.y)).rgb, vec3(0.299, 0.587, 0.114));
+            float tright = dot(texture2D(u_image, uv + vec2(step.x, step.y)).rgb, vec3(0.299, 0.587, 0.114));
+            float right = dot(texture2D(u_image, uv + vec2(step.x, 0.0)).rgb, vec3(0.299, 0.587, 0.114));
+            float bright = dot(texture2D(u_image, uv + vec2(step.x, -step.y)).rgb, vec3(0.299, 0.587, 0.114));
+
+            float gx = -tleft - 2.0 * left - bleft + tright + 2.0 * right + bright;
+            float gy = -tleft - 2.0 * top - tright + bleft + 2.0 * bottom + bright;
+            return length(vec2(gx, gy));
+        }
+
+        void main() {
+            vec2 uv = v_texCoord;
+            vec4 src = texture2D(u_image, uv);
+            
+            // Perceived luminance (grayscale thermal base)
+            float lum = dot(src.rgb, vec3(0.299, 0.587, 0.114));
+            
+            // Apply gain and contrast curve
+            lum = pow(lum * u_gain, u_contrast);
+            lum = clamp(lum, 0.0, 1.0);
+
+            vec3 outColor = vec3(0.0);
+
+            if (u_mode == 0) {
+                // Ironbow
+                outColor = paletteIronbow(lum);
+            } else if (u_mode == 1) {
+                // Rainbow
+                outColor = paletteRainbow(lum);
+            } else if (u_mode == 2) {
+                // Inferno
+                outColor = paletteInferno(lum);
+            } else if (u_mode == 3) {
+                // Night Vision
+                outColor = paletteNightVision(lum, uv);
+            } else if (u_mode == 4) {
+                // Classic IR
+                outColor = paletteClassicIR(src.rgb, lum);
+            } else if (u_mode == 5) {
+                // MSX Thermal Edge Fusion
+                float edge = getSobelEdge(uv);
+                vec3 thermal = paletteIronbow(lum);
+                outColor = mix(thermal, vec3(1.0), clamp(edge * 1.5, 0.0, 1.0));
+            }
+
+            gl_FragColor = vec4(outColor, 1.0);
+        }
+    </script>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('glcanvas');
+        const gl = canvas.getContext('webgl');
+        const hotspotMarker = document.getElementById('hotspot-marker');
+        const hotspotVal = document.getElementById('hotspot-val');
+        const tempCenter = document.getElementById('temp-center');
+        const hotspotText = document.getElementById('hotspot-text');
+        const modeText = document.getElementById('mode-text');
+        const thermalScale = document.getElementById('thermal-scale');
+
+        let currentFacingMode = 'environment';
+        let currentStream = null;
+        let currentMode = 0;
+        let gain = 1.2;
+        let contrast = 1.3;
+        let flashOn = false;
+        let program, texture;
+
+        const paletteNames = [
+            "IRONBOW (FLIR STANDARD)",
+            "RAINBOW (HIGH DYNAMIC)",
+            "INFERNO (HEAT MAP)",
+            "NIGHT VISION (GREEN IR)",
+            "CLASSIC IR (B&W WOOD EFFECT)",
+            "MSX EDGE FUSION"
+        ];
+
+        // Gradient Scale Themes matching palettes
+        const scaleGradients = [
+            'linear-gradient(to bottom, #ffffff, #ffea00, #ff3300, #990099, #000033)',
+            'linear-gradient(to bottom, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff)',
+            'linear-gradient(to bottom, #fafa80, #f08010, #b01030, #400060, #000000)',
+            'linear-gradient(to bottom, #a0ffa0, #50dd50, #208820, #003300, #000000)',
+            'linear-gradient(to bottom, #ffffff, #aaaaaa, #777777, #333333, #000000)',
+            'linear-gradient(to bottom, #ffffff, #ffea00, #ff3300, #990099, #000033)'
+        ];
+
+        // Shader setup
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error(gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        function initGL() {
+            if (!gl) {
+                alert("WebGL tidak didukung pada browser ini.");
+                return;
+            }
+            const vsSource = document.getElementById('vs').text;
+            const fsSource = document.getElementById('fs').text;
+            const vs = createShader(gl, gl.VERTEX_SHADER, vsSource);
+            const fs = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
+
+            program = gl.createProgram();
+            gl.attachShader(program, vs);
+            gl.attachShader(program, fs);
+            gl.linkProgram(program);
+
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error(gl.getProgramInfoLog(program));
+                return;
+            }
+
+            // Quad geometry
+            const positionLocation = gl.getAttribLocation(program, 'a_position');
+            const texCoordLocation = gl.getAttribLocation(program, 'a_texCoord');
+
+            const positionBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+                -1, -1,
+                 1, -1,
+                -1,  1,
+                -1,  1,
+                 1, -1,
+                 1,  1,
+            ]), gl.STATIC_DRAW);
+            gl.enableVertexAttribArray(positionLocation);
+            gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+            const texCoordBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+            // Inverted Y for video orientation
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+                0, 1,
+                1, 1,
+                0, 0,
+                0, 0,
+                1, 1,
+                1, 0,
+            ]), gl.STATIC_DRAW);
+            gl.enableVertexAttribArray(texCoordLocation);
+            gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
+
+            // Texture
+            texture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+            gl.useProgram(program);
+        }
+
+        // Camera feed
+        async function startCamera() {
+            try {
+                if (currentStream) {
+                    currentStream.getTracks().forEach(track => track.stop());
+                }
+                document.getElementById('camera-modal').style.display = 'none';
+
+                const constraints = {
+                    video: {
+                        facingMode: { ideal: currentFacingMode },
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    },
+                    audio: false
+                };
+
+                currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = currentStream;
+                await video.play();
+
+                resizeCanvas();
+                requestAnimationFrame(render);
+            } catch (err) {
+                console.error("Gagal membuka kamera:", err);
+                document.getElementById('camera-modal').style.display = 'block';
+                document.getElementById('modal-msg').innerText = "Gagal mengakses kamera: " + err.message;
+            }
+        }
+
+        function resizeCanvas() {
+            if (video.videoWidth && video.videoHeight) {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+            } else {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            }
+        }
+
+        // Sampling canvas for Hotspot and Center Temperature calculation
+        const sampleCanvas = document.createElement('canvas');
+        const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
+        sampleCanvas.width = 64;
+        sampleCanvas.height = 48;
+
+        let frameCount = 0;
+        function updateTemperatureAnalysis() {
+            if (!video.videoWidth) return;
+            sampleCtx.drawImage(video, 0, 0, sampleCanvas.width, sampleCanvas.height);
+            const imgData = sampleCtx.getImageData(0, 0, sampleCanvas.width, sampleCanvas.height).data;
+
+            let maxLum = 0;
+            let maxX = 0;
+            let maxY = 0;
+
+            // Center temp calculation (around sample center)
+            const cIdx = ((24 * sampleCanvas.width) + 32) * 4;
+            const cLum = (imgData[cIdx] * 0.299 + imgData[cIdx+1] * 0.587 + imgData[cIdx+2] * 0.114) / 255.0;
+            const centerTemp = (22.0 + cLum * 18.0 * (gain / 1.2)).toFixed(1);
+            tempCenter.innerText = `T_CTR: ${centerTemp}°C`;
+
+            // Scan for hotspot
+            for (let y = 0; y < sampleCanvas.height; y += 2) {
+                for (let x = 0; x < sampleCanvas.width; x += 2) {
+                    const idx = (y * sampleCanvas.width + x) * 4;
+                    const lum = imgData[idx] * 0.299 + imgData[idx+1] * 0.587 + imgData[idx+2] * 0.114;
+                    if (lum > maxLum) {
+                        maxLum = lum;
+                        maxX = x;
+                        maxY = y;
+                    }
+                }
+            }
+
+            const maxTemp = (24.0 + (maxLum / 255.0) * 20.0 * (gain / 1.2)).toFixed(1);
+            hotspotText.innerText = `MAX: ${maxTemp}°C`;
+
+            // Update Hotspot Marker on screen
+            if (maxLum > 130) {
+                hotspotMarker.style.display = 'block';
+                const screenX = (maxX / sampleCanvas.width) * window.innerWidth;
+                const screenY = (maxY / sampleCanvas.height) * (window.innerHeight - 140);
+                hotspotMarker.style.left = `${screenX}px`;
+                hotspotMarker.style.top = `${screenY}px`;
+                hotspotVal.innerText = `${maxTemp}°C`;
+            } else {
+                hotspotMarker.style.display = 'none';
+            }
+        }
+
+        let startTime = performance.now();
+        function render() {
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                gl.viewport(0, 0, canvas.width, canvas.height);
+                gl.useProgram(program);
+
+                // Update texture from video
+                gl.bindTexture(gl.TEXTURE_2D, texture);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+
+                // Set uniforms
+                gl.uniform2f(gl.getUniformLocation(program, 'u_resolution'), canvas.width, canvas.height);
+                gl.uniform1i(gl.getUniformLocation(program, 'u_mode'), currentMode);
+                gl.uniform1f(gl.getUniformLocation(program, 'u_gain'), gain);
+                gl.uniform1f(gl.getUniformLocation(program, 'u_contrast'), contrast);
+                gl.uniform1f(gl.getUniformLocation(program, 'u_time'), (performance.now() - startTime) / 1000.0);
+
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+                frameCount++;
+                if (frameCount % 6 === 0) {
+                    updateTemperatureAnalysis();
+                }
+            }
+            requestAnimationFrame(render);
+        }
+
+        // Palette selector
+        document.getElementById('palette-list').addEventListener('click', (e) => {
+            const btn = e.target.closest('.palette-btn');
+            if (!btn) return;
+            document.querySelectorAll('.palette-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentMode = parseInt(btn.dataset.mode);
+            modeText.innerText = `PALETTE: ${paletteNames[currentMode]}`;
+            thermalScale.style.background = scaleGradients[currentMode];
+        });
+
+        // Sliders
+        document.getElementById('slider-gain').addEventListener('input', (e) => {
+            gain = parseFloat(e.target.value);
+            document.getElementById('gain-val').innerText = `${gain.toFixed(1)}x`;
+        });
+        document.getElementById('slider-contrast').addEventListener('input', (e) => {
+            contrast = parseFloat(e.target.value);
+            document.getElementById('contrast-val').innerText = `${contrast.toFixed(1)}`;
+        });
+
+        // Switch camera front/back
+        document.getElementById('btn-switch-cam').addEventListener('click', () => {
+            currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+            startCamera();
+        });
+
+        // Toggle Flashlight (Torch)
+        document.getElementById('btn-flash').addEventListener('click', async () => {
+            if (!currentStream) return;
+            const track = currentStream.getVideoTracks()[0];
+            const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+            if (capabilities.torch) {
+                flashOn = !flashOn;
+                await track.applyConstraints({ advanced: [{ torch: flashOn }] });
+                document.getElementById('btn-flash').style.borderColor = flashOn ? '#00ffcc' : '#374151';
+                document.getElementById('btn-flash').style.color = flashOn ? '#00ffcc' : '#fff';
+            } else {
+                alert("Lampu flash tidak didukung atau kamera depan sedang aktif.");
+            }
+        });
+
+        // Capture snapshot
+        document.getElementById('btn-capture').addEventListener('click', () => {
+            // Flash animation
+            const flashOverlay = document.createElement('div');
+            flashOverlay.style.position = 'fixed';
+            flashOverlay.style.top = '0';
+            flashOverlay.style.left = '0';
+            flashOverlay.style.width = '100vw';
+            flashOverlay.style.height = '100vh';
+            flashOverlay.style.background = '#fff';
+            flashOverlay.style.zIndex = '999';
+            flashOverlay.style.opacity = '0.9';
+            flashOverlay.style.transition = 'opacity 0.3s ease-out';
+            document.body.appendChild(flashOverlay);
+
+            setTimeout(() => {
+                flashOverlay.style.opacity = '0';
+                setTimeout(() => flashOverlay.remove(), 300);
+            }, 50);
+
+            // Export canvas as image
+            const link = document.createElement('a');
+            link.download = `IR_CAM_${Date.now()}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        });
+
+        // Init
+        window.addEventListener('resize', resizeCanvas);
+        initGL();
+        startCamera();
+    </script>
+</body>
+</html>

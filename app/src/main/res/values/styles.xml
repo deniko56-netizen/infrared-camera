@@ -1,0 +1,11 @@
+<resources>
+    <style name="Theme.InfraredCamera" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:statusBarColor">#000000</item>
+        <item name="android:navigationBarColor">#000000</item>
+    </style>
+
+    <style name="Theme.InfraredCamera.Fullscreen" parent="Theme.InfraredCamera">
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+    </style>
+</resources>

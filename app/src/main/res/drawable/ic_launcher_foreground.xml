@@ -1,0 +1,18 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Camera body -->
+    <path
+        android:fillColor="#00FFCC"
+        android:pathData="M34,36 L40,30 L68,30 L74,36 L86,36 C89.3,36 92,38.7 92,42 L92,76 C92,79.3 89.3,82 86,82 L22,82 C18.7,82 16,79.3 16,76 L16,42 C16,38.7 18.7,36 22,36 Z"/>
+    <!-- Lens outer -->
+    <path
+        android:fillColor="#0D0F12"
+        android:pathData="M54,42 C63.4,42 71,49.6 71,59 C71,68.4 63.4,76 54,76 C44.6,76 37,68.4 37,59 C37,49.6 44.6,42 54,42 Z"/>
+    <!-- Infrared Core -->
+    <path
+        android:fillColor="#FF3366"
+        android:pathData="M54,49 C59.5,49 64,53.5 64,59 C64,64.5 59.5,69 54,69 C48.5,69 44,64.5 44,59 C44,53.5 48.5,49 54,49 Z"/>
+</vector>
